@@ -1,35 +1,22 @@
-const jwt= require("jsonwebtoken")
+const jwt = require('jsonwebtoken');
 
-const verifyToken=(req,res,next)=>{
- const authHeader=req.headers.authorization;
- console.log(authHeader)
- if(!authHeader){
-    res.json({
-        message:"Token is Missing/Token is invalid"
-    })
- }
- 
+// Protected routes ke liye — Authorization header me "Bearer <token>" check karta hai
+const protect = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
 
-//  Berer token
-const token= authHeader.split(" ")[1];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'Access token nahi mila, login karo' });
+    }
 
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
+    req.user = { id: decoded.id, role: decoded.role };
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Access token expired ya invalid hai' });
+  }
+};
 
-try {
-
-    const secretKey="Dikshant16121999Chakrayat@123"
-    const decode= jwt.verify(token,secretKey)
-    console.log(decode)
-
-    req.user= decode
-    next()
-    
-} catch (error) {
-    console.log(error.message)
-    console.log(error)
-    res.json(error)
-}
-
-
-}
-module.exports=verifyToken
+module.exports = { protect };

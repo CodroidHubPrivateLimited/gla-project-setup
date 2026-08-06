@@ -1,51 +1,71 @@
-const User = require("../../../Models/UserSchema/user")
-const bcrypt = require("bcrypt");
+const User = require("../../../Models/UserSchema/User");
 
-const register = async (req, res) => {
-    try {
+const {
+  generateAccessToken,
+  generateRefreshToken,
+} = require("../../../../Utils/generateToken");
 
-        const { name, email, password } = req.body;
-
-        // checking the User 
-        const checkExistingUser = await User.findOne({ email });
- 
-        if (checkExistingUser) {
-            return res.status(400).json({
-                message: "User Already Exists"
-            });
-        }
-
-
-        //  Password Hasihng
-        console.log("Password Before Hashing:", password);
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        console.log("Password After Hashing:", hashedPassword);
-
-        const user = new User({
-            name,
-            email,
-            password: hashedPassword
-           
-        });
-
-        const data = await user.save();
-
-        res.status(201).json({
-            message: "Registration Successful",
-            registeredData: data
-        });
-
-    } catch (error) {
-
-        console.log(error);
-
-        res.status(500).json({
-            message: error.message
-        });
-
-    }
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
-module.exports = { register };
+// @route POST /api/auth/register
+// @access Public
+const registerUser = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "Name, email and password are required",
+      });
+    }
+
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "User already exists with this email",
+      });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role,
+    });
+
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.cookie("refreshToken", refreshToken, refreshCookieOptions);
+
+    res.status(201).json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      accessToken,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Registration failed",
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  registerUser,
+};

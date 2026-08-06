@@ -1,38 +1,65 @@
-const User= require("../../../Models/UserSchema/user")
-const bcrypt= require("bcrypt")
-const { response } = require("express")
-const jwt= require("jsonwebtoken")
+const User = require('../../../Models/UserSchema/User');
 
-const loginController=async(req,res)=>{
-try {
+const {
+  generateAccessToken,
+  generateRefreshToken,
+} = require('../../../../Utils/generateToken');
 
-    const{email,password}=req.body
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
 
-    const existingUser= await User.findOne({email})
-    console.log("My exsiting user Data",existingUser )
-    if(!existingUser){
-        console.log("user Not Found")
+// @route POST /api/auth/login
+// @access Public
+const loginUser = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message: 'Email and password are required',
+      });
     }
 
-    const matchedPassword= await bcrypt.compare(password,existingUser.password)
-    if(!matchedPassword){
-        console.log("Password is Invalid")
+    // Password field is hidden by default (select: false)
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({
+        message: 'Invalid email or password',
+      });
     }
 
+    const accessToken = generateAccessToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
 
-    const secretKey="Dikshant16121999Chakrayat@123"
-    const token= await jwt.sign({id:existingUser._id,email:existingUser.email, role:existingUser.role}, secretKey)
+    user.refreshToken = refreshToken;
+    await user.save();
 
-    res.json({
-        message:"Loged in Sucessfully",
-        token
-    })
+    res.cookie('refreshToken', refreshToken, refreshCookieOptions);
 
+    res.status(200).json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      accessToken,
+    });
+  } catch (error) {
+    console.error(error);
 
-} catch (error) {
-    console.log(error.message)
-    console.log(error)
-    res.json("User Not Found")
-}
-}
-module.exports=loginController
+    res.status(500).json({
+      message: 'Login failed',
+      error: error.message,
+    });
+  }
+};
+
+module.exports = {
+  loginUser,
+};
